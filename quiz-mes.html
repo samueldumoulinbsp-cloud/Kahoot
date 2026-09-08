@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz MES – Formations</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root {
+    --vert:       #2C5F2E;
+    --vert-clair: #4A8C4D;
+    --vert-pale:  #E8F2E8;
+    --blanc:      #FFFFFF;
+    --gris-clair: #F5F7F5;
+    --gris:       #6B7B6B;
+    --texte:      #1A2E1A;
+    --rouge:      #C0392B;
+    --orange:     #E67E22;
+    --bleu:       #2980B9;
+    --violet:     #8E44AD;
+    --answer-colors: #2C5F2E, #E67E22, #2980B9, #8E44AD;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--gris-clair);
+    color: var(--texte);
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    background: var(--vert);
+    color: white;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  }
+  .header-logo {
+    width: 44px; height: 44px;
+    background: white;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; color: var(--vert); font-size: 18px; letter-spacing: -1px;
+  }
+  .header-title { font-size: 1.1rem; font-weight: 700; }
+  .header-sub   { font-size: .78rem; opacity: .75; margin-top: 1px; }
+
+  /* ── PAGES ── */
+  .page { display: none; padding: 24px 16px; max-width: 680px; margin: 0 auto; }
+  .page.active { display: block; }
+
+  /* ── ACCUEIL ── */
+  .home-card {
+    background: white;
+    border-radius: 16px;
+    padding: 32px 28px;
+    text-align: center;
+    box-shadow: 0 2px 12px rgba(44,95,46,.1);
+    margin-bottom: 20px;
+  }
+  .home-card h2 { font-size: 1.5rem; color: var(--vert); margin-bottom: 8px; }
+  .home-card p  { color: var(--gris); font-size: .95rem; line-height: 1.5; }
+
+  .btn-row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin-top: 24px; }
+
+  .btn {
+    padding: 13px 28px;
+    border: none; border-radius: 10px;
+    font-size: 1rem; font-weight: 600;
+    cursor: pointer; transition: transform .12s, box-shadow .12s;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(0,0,0,.15); }
+  .btn:active { transform: none; }
+
+  .btn-primary   { background: var(--vert); color: white; }
+  .btn-secondary { background: white; color: var(--vert); border: 2px solid var(--vert); }
+  .btn-danger    { background: var(--rouge); color: white; }
+  .btn-full      { width: 100%; }
+  .btn-sm        { padding: 8px 18px; font-size: .88rem; }
+
+  /* ── FORMULAIRES ── */
+  input[type=text], input[type=number] {
+    width: 100%; padding: 11px 14px;
+    border: 2px solid #D0DDD0; border-radius: 8px;
+    font-size: 1rem; outline: none;
+    transition: border-color .2s;
+  }
+  input:focus { border-color: var(--vert-clair); }
+
+  label { display: block; font-weight: 600; margin-bottom: 6px; font-size: .9rem; color: var(--texte); }
+
+  .field { margin-bottom: 16px; }
+
+  /* ── HÔTE : édition question ── */
+  .editor-card {
+    background: white; border-radius: 14px;
+    padding: 20px; margin-bottom: 16px;
+    box-shadow: 0 1px 6px rgba(0,0,0,.07);
+  }
+  .editor-card h3 { font-size: 1rem; color: var(--vert); margin-bottom: 16px; }
+
+  .answer-row {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+  }
+  .answer-dot {
+    width: 28px; height: 28px; border-radius: 50%;
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; color: white; font-size: .8rem;
+  }
+  .dot-0 { background: var(--vert); }
+  .dot-1 { background: var(--orange); }
+  .dot-2 { background: var(--bleu); }
+  .dot-3 { background: var(--violet); }
+
+  .answer-row input { flex: 1; }
+
+  .radio-correct { accent-color: var(--vert); width: 18px; height: 18px; cursor: pointer; }
+
+  .time-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+  .time-row input { width: 90px; }
+
+  /* ── LISTE DES QUESTIONS ── */
+  .question-list { margin-top: 16px; }
+  .q-item {
+    background: white; border-radius: 10px;
+    padding: 12px 16px; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  .q-num {
+    background: var(--vert-pale); color: var(--vert);
+    width: 30px; height: 30px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: .85rem; flex-shrink: 0;
+  }
+  .q-text { flex: 1; font-size: .92rem; }
+  .q-del  { background: none; border: none; cursor: pointer; color: var(--rouge); font-size: 1.2rem; }
+
+  /* ── SALLE D'ATTENTE ── */
+  .pin-display {
+    background: var(--vert); color: white;
+    border-radius: 16px; padding: 28px;
+    text-align: center; margin-bottom: 20px;
+  }
+  .pin-label { font-size: .85rem; opacity: .8; margin-bottom: 6px; letter-spacing: 1px; text-transform: uppercase; }
+  .pin-code  { font-size: 3.5rem; font-weight: 900; letter-spacing: 8px; line-height: 1; }
+
+  #qrcode { margin: 16px auto; width: fit-content; }
+
+  .player-count {
+    background: white; border-radius: 12px; padding: 16px 20px;
+    text-align: center; box-shadow: 0 1px 6px rgba(0,0,0,.07);
+    margin-bottom: 12px;
+  }
+  .player-count span { font-size: 2rem; font-weight: 800; color: var(--vert); }
+  .player-count p    { font-size: .85rem; color: var(--gris); margin-top: 2px; }
+
+  .player-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .chip {
+    background: var(--vert-pale); color: var(--vert);
+    padding: 5px 12px; border-radius: 20px;
+    font-size: .85rem; font-weight: 600;
+  }
+
+  /* ── QUESTION EN COURS ── */
+  .progress-bar-wrap {
+    background: #D0DDD0; border-radius: 4px; height: 6px; margin-bottom: 20px;
+  }
+  .progress-bar {
+    background: var(--vert-clair); height: 6px; border-radius: 4px;
+    transition: width .5s linear;
+  }
+
+  .timer-ring {
+    width: 70px; height: 70px;
+    border-radius: 50%;
+    background: conic-gradient(var(--vert-clair) var(--p,100%), #D0DDD0 0);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem; font-weight: 900; color: var(--vert);
+    margin: 0 auto 20px;
+    transition: --p .5s linear;
+  }
+
+  .question-text {
+    background: white; border-radius: 14px;
+    padding: 20px; margin-bottom: 16px;
+    font-size: 1.1rem; font-weight: 600; line-height: 1.45;
+    box-shadow: 0 1px 6px rgba(0,0,0,.07);
+    text-align: center;
+  }
+
+  .answers-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 10px; margin-bottom: 16px;
+  }
+  .answer-btn {
+    border: none; border-radius: 12px;
+    padding: 18px 14px;
+    font-size: .95rem; font-weight: 600; color: white;
+    cursor: pointer; text-align: left; line-height: 1.3;
+    transition: transform .1s, opacity .2s;
+    display: flex; align-items: flex-start; gap: 8px;
+  }
+  .answer-btn:hover { transform: scale(1.02); }
+  .answer-btn.a0 { background: var(--vert); }
+  .answer-btn.a1 { background: var(--orange); }
+  .answer-btn.a2 { background: var(--bleu); }
+  .answer-btn.a3 { background: var(--violet); }
+  .answer-btn.disabled { opacity: .4; cursor: not-allowed; }
+  .answer-btn.correct  { outline: 4px solid #1A2E1A; }
+  .answer-btn.wrong    { opacity: .35; }
+
+  .answer-icon { font-size: 1.2rem; flex-shrink: 0; }
+
+  /* ── RÉSULTATS intermédiaires ── */
+  .result-correct {
+    background: var(--vert); color: white;
+    border-radius: 14px; padding: 20px; text-align: center; margin-bottom: 16px;
+  }
+  .result-correct h3 { font-size: 1.1rem; margin-bottom: 6px; }
+
+  .leaderboard { list-style: none; }
+  .lb-item {
+    background: white; border-radius: 10px;
+    padding: 12px 16px; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 14px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  .lb-rank { font-weight: 900; color: var(--vert); font-size: 1.1rem; width: 28px; }
+  .lb-name { flex: 1; font-weight: 600; }
+  .lb-score { font-weight: 800; color: var(--vert); font-size: 1.1rem; }
+
+  /* ── REJOINDRE ── */
+  .join-card {
+    background: white; border-radius: 16px;
+    padding: 32px 24px; text-align: center;
+    box-shadow: 0 2px 12px rgba(44,95,46,.1);
+  }
+  .join-card h2 { color: var(--vert); margin-bottom: 6px; }
+  .join-card p  { color: var(--gris); margin-bottom: 24px; font-size: .9rem; }
+
+  /* ── JOUEUR : attente ── */
+  .wait-card {
+    background: white; border-radius: 16px;
+    padding: 40px 24px; text-align: center;
+    box-shadow: 0 2px 12px rgba(44,95,46,.1);
+  }
+  .wait-icon { font-size: 3rem; margin-bottom: 14px; }
+  .wait-card h2 { color: var(--vert); margin-bottom: 8px; }
+  .wait-card p  { color: var(--gris); font-size: .9rem; }
+
+  /* ── SCORE JOUEUR ── */
+  .score-badge {
+    background: var(--vert-pale); color: var(--vert);
+    border-radius: 12px; padding: 16px 20px;
+    text-align: center; margin-bottom: 16px;
+  }
+  .score-badge .pts { font-size: 2rem; font-weight: 900; }
+  .score-badge .lbl { font-size: .8rem; color: var(--gris); }
+
+  /* ── FINAL ── */
+  .podium { display: flex; align-items: flex-end; justify-content: center; gap: 10px; margin: 24px 0; }
+  .podium-item { text-align: center; }
+  .podium-bar {
+    border-radius: 8px 8px 0 0; width: 80px;
+    background: var(--vert-pale);
+    display: flex; align-items: flex-end; justify-content: center;
+    padding-bottom: 8px;
+  }
+  .podium-bar.p1 { background: #FFD700; height: 110px; }
+  .podium-bar.p2 { background: #C0C0C0; height: 80px; }
+  .podium-bar.p3 { background: #CD7F32; height: 60px; }
+  .podium-rank { font-size: 1.5rem; }
+  .podium-name { font-size: .78rem; font-weight: 700; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80px; }
+  .podium-score { font-size: .75rem; color: var(--gris); }
+
+  /* ── UTILITAIRES ── */
+  .section-title { font-size: 1.1rem; font-weight: 700; color: var(--vert); margin-bottom: 14px; }
+  .mt { margin-top: 16px; }
+  .text-center { text-align: center; }
+  .hidden { display: none !important; }
+
+  @media (max-width: 420px) {
+    .answers-grid { grid-template-columns: 1fr; }
+    .pin-code { font-size: 2.8rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">MES</div>
+  <div>
+    <div class="header-title">Quiz MES</div>
+    <div class="header-sub">Maison d'Économie Solidaire</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     PAGE : ACCUEIL
+══════════════════════════════════ -->
+<div class="page active" id="page-home">
+  <div class="home-card">
+    <div style="font-size:2.5rem;margin-bottom:14px">🌱</div>
+    <h2>Bienvenue sur Quiz MES</h2>
+    <p>Outil de formation interactif pour les équipes de la Maison d'Économie Solidaire</p>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="showPage('page-host-setup')">🎯 Je suis l'hôte</button>
+      <button class="btn btn-secondary" onclick="showPage('page-join')">📱 Je rejoins</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     PAGE : HÔTE – CONFIGURATION
+══════════════════════════════════ -->
+<div class="page" id="page-host-setup">
+  <p class="section-title">🎯 Mode Hôte</p>
+
+  <!-- Charger un JSON -->
+  <div class="editor-card">
+    <h3>📂 Charger un quiz (fichier JSON)</h3>
+    <input type="file" id="fileInput" accept=".json" onchange="loadJSON(event)" style="display:none">
+    <button class="btn btn-secondary btn-full" onclick="document.getElementById('fileInput').click()">Choisir un fichier JSON</button>
+    <p id="file-info" style="text-align:center;font-size:.85rem;color:var(--gris);margin-top:10px"></p>
+  </div>
+
+  <!-- Créer une question -->
+  <div class="editor-card">
+    <h3>➕ Ajouter une question</h3>
+    <div class="field">
+      <label>Question</label>
+      <input type="text" id="q-text" placeholder="Écrivez votre question…">
+    </div>
+    <div id="answers-inputs"></div>
+    <div class="time-row">
+      <label style="margin:0;white-space:nowrap">⏱ Temps (s)</label>
+      <input type="number" id="q-time" value="25" min="5" max="120">
+    </div>
+    <button class="btn btn-primary btn-full mt" onclick="addQuestion()">Ajouter la question</button>
+  </div>
+
+  <!-- Liste -->
+  <div id="question-list-section" class="hidden">
+    <p class="section-title">📋 Questions (<span id="q-count">0</span>)</p>
+    <div class="question-list" id="question-list"></div>
+    <div class="btn-row">
+      <button class="btn btn-secondary btn-sm" onclick="saveJSON()">💾 Sauvegarder</button>
+      <button class="btn btn-primary" onclick="startLobby()">🚀 Lancer le quiz</button>
+    </div>
+  </div>
+
+  <button class="btn btn-secondary btn-full mt" onclick="showPage('page-home')">← Retour</button>
+</div>
+
+<!-- ══════════════════════════════════
+     PAGE : SALLE D'ATTENTE (HÔTE)
+══════════════════════════════════ -->
+<div class="page" id="page-lobby">
+  <div class="pin-display">
+    <div class="pin-label">Code PIN</div>
+    <div class="pin-code" id="pin-display">----</div>
+  </div>
+
+  <div style="background:white;border-radius:14px;padding:20px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,.07);margin-bottom:16px">
+    <p style="font-size:.85rem;color:var(--gris);margin-bottom:10px">📱 Scanner pour rejoindre</p>
+    <div id="qrcode"></div>
+    <p style="font-size:.78rem;color:var(--gris);margin-top:10px" id="join-url-text"></p>
+    <button class="btn btn-secondary btn-sm mt" onclick="copyJoinLink()">📋 Copier le lien</button>
+  </div>
+
+  <div class="player-count">
+    <span id="player-count-num">0</span>
+    <p>joueur(s) connecté(s)</p>
+  </div>
+
+  <div class="player-chips" id="player-chips"></div>
+
+  <button class="btn btn-primary btn-full" id="start-btn" onclick="startQuiz()">▶️ Commencer</button>
+  <button class="btn btn-danger btn-full mt" onclick="cancelLobby()">❌ Annuler</button>
+</div>
+
+<!-- ══════════════════════════════════
+     PAGE : QUESTION EN COURS (HÔTE)
+══════════════════════════════════ -->
+<div class="page" id="page-question-host">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <span style="font-size:.85rem;color:var(--gris)" id="q-progress">Question 1/10</span>
+    <span style="font-size:.85rem;font-weight:700;color:var(--vert)" id="responses-count">0/0 réponses</span>
+  </div>
+
+  <div class="progress-bar-wrap">
+    <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+  </div>
+
+  <div class="timer-ring" id="timer-display">25</div>
+
+  <div class="question-text" id="host-question-text">–</div>
+
+  <div class="answers-grid" id="host-answers-grid"></div>
+</div>
+
+<!-- ══════════════════════════════════
+     PAGE : RÉSULTATS QUESTION (HÔTE)
+══════════════════════════════════ -->
+<div class="page" id="page-result-host">
+  <div class="result-correct">
+    <div style="font-size:2rem">✅</div>
+    <h3>Bonne réponse :</h3>
+    <p id="correct-answer-text" style="font-size:1.1rem;font-weight:700;margin-top:6px"></p>
+  </div>
+
+  <p class="section-title">🏆 Classement</p>
+  <ul class="leaderboard" id="leaderboard-list"></ul>
+
+  <button class="btn btn-primary btn-full mt" id="next-btn" onclick="nextQuestion()">➡️ Question suivante</button>
+</div>
+
+<!-- ══════════════════════════════════
+     PAGE : FIN (HÔTE)
+══════════════════════════════════ -->
+<div class="page" id="page-final-host">
+  <div style="text-align:center;margin-bottom:20px">
+    <div style="font-size:2.5rem">🏆</div>
+    <h2 style="color:var(--vert);margin-top:8px">Résultats finaux</h2>
+  </div>
+
+  <div class="podium" id="podium"></div>
+
+  <p class="section-title">Classement complet</p>
+  <ul class="leaderboard" id="final-leaderboard"></ul>
+
+  <button class="btn btn-secondary btn-full mt" onclick="newGame()">🔄 Nouvelle partie</button>
+</div>
+
+<!-- ══════════════════════════════════
+     PAGE : REJOINDRE
+══════════════════════════════════ -->
+<div class="page" id="page-join">
+  <div class="join-card">
+    <div style="font-size:2.5rem;margin-bottom:12px">📱</div>
+    <h2>Rejoindre une partie</h2>
+    <p>Entre le code PIN et ton pseudo pour participer</p>
+
+    <div class="field" style="text-align:left">
+      <label>Code PIN</label>
+      <input type="text" id="join-pin" placeholder="Ex : 4832" maxlength="6" inputmode="numeric">
+    </div>
+    <div class="field" style="text-align:left">
+      <label>Ton prénom</label>
+      <input type="text" id="join-name" placeholder="Ex : Marie" maxlength="20">
+    </div>
+
+    <button class="btn btn-primary btn-full" onclick="joinGame()">Rejoindre →</button>
+    <button class="btn btn-secondary btn-full mt" onclick="showPage('page-home')" style="margin-top:10px">← Retour</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     PAGE : ATTENTE JOUEUR
+══════════════════════════════════ -->
+<div class="page" id="page-player-wait">
+  <div class="wait-card">
+    <div class="wait-icon">🌱</div>
+    <h2>Tu es connecté !</h2>
+    <p>En attente du démarrage par l'hôte…</p>
+    <p style="margin-top:20px;font-size:1.1rem;font-weight:700;color:var(--vert)" id="player-name-display"></p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     PAGE : QUESTION EN COURS (JOUEUR)
+══════════════════════════════════ -->
+<div class="page" id="page-question-player">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+    <span style="font-size:.85rem;color:var(--gris)" id="player-q-progress">Question 1</span>
+    <div class="score-badge" style="padding:6px 14px;margin:0">
+      <span class="pts" style="font-size:1.1rem" id="player-score-top">0</span>
+      <span class="lbl"> pts</span>
+    </div>
+  </div>
+
+  <div class="progress-bar-wrap">
+    <div class="progress-bar" id="player-progress-bar" style="width:0%"></div>
+  </div>
+
+  <div class="timer-ring" id="player-timer">25</div>
+  <div class="question-text" id="player-question-text">–</div>
+  <div class="answers-grid" id="player-answers-grid"></div>
+  <p id="player-answered-msg" class="hidden" style="text-align:center;color:var(--vert);font-weight:600;margin-top:12px">✅ Réponse enregistrée !</p>
+</div>
+
+<!-- ══════════════════════════════════
+     PAGE : RÉSULTAT JOUEUR
+══════════════════════════════════ -->
+<div class="page" id="page-result-player">
+  <div id="player-result-card" class="result-correct" style="margin-bottom:16px">
+    <div style="font-size:2.5rem" id="player-result-icon">✅</div>
+    <h3 id="player-result-title">Bonne réponse !</h3>
+    <p id="player-result-correct" style="margin-top:6px;font-size:1rem"></p>
+  </div>
+
+  <div class="score-badge">
+    <div class="pts" id="player-score-result">0</div>
+    <div class="lbl">points au total</div>
+  </div>
+
+  <div style="background:white;border-radius:12px;padding:16px;text-align:center;box-shadow:0 1px 6px rgba(0,0,0,.07)">
+    <p style="color:var(--gris);font-size:.9rem">⏳ En attente de la prochaine question…</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     PAGE : FIN JOUEUR
+══════════════════════════════════ -->
+<div class="page" id="page-final-player">
+  <div style="text-align:center;padding:20px 0">
+    <div style="font-size:3rem">🎉</div>
+    <h2 style="color:var(--vert);margin:10px 0">Quiz terminé !</h2>
+  </div>
+
+  <div class="score-badge" style="margin-bottom:20px">
+    <div class="pts" id="player-final-score">0</div>
+    <div class="lbl">points finaux</div>
+  </div>
+
+  <div id="player-final-rank" style="text-align:center;font-size:1.1rem;font-weight:700;color:var(--vert);margin-bottom:20px"></div>
+
+  <button class="btn btn-secondary btn-full" onclick="newGame()">🔄 Nouvelle partie</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════
+const state = {
+  mode: null,          // 'host' | 'player'
+  questions: [],
+  currentQ: 0,
+  players: {},         // { id: { name, score, answered } }
+  myId: null,
+  myName: '',
+  myScore: 0,
+  pin: '',
+  timerInterval: null,
+  timeLeft: 0,
+  totalTime: 0,
+  phase: 'lobby',      // lobby | question | result | final
+  selectedAnswer: null,
+  correctIndex: null,
+};
+
+// ═══════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+// ═══════════════════════════════════════════
+//  SETUP ANSWER INPUTS
+// ═══════════════════════════════════════════
+const ICONS = ['🟢', '🟠', '🔵', '🟣'];
+const LETTERS = ['A', 'B', 'C', 'D'];
+
+function buildAnswerInputs() {
+  const c = document.getElementById('answers-inputs');
+  c.innerHTML = '';
+  for (let i = 0; i < 4; i++) {
+    c.innerHTML += `
+      <div class="answer-row">
+        <div class="answer-dot dot-${i}">${LETTERS[i]}</div>
+        <input type="text" id="ans-${i}" placeholder="Réponse ${LETTERS[i]}…">
+        <input type="radio" class="radio-correct" name="correct" value="${i}" ${i===0?'checked':''}>
+      </div>`;
+  }
+}
+buildAnswerInputs();
+
+// ═══════════════════════════════════════════
+//  GESTION QUESTIONS
+// ═══════════════════════════════════════════
+function addQuestion() {
+  const text = document.getElementById('q-text').value.trim();
+  if (!text) return alert('Entrez la question.');
+  const answers = [0,1,2,3].map(i => document.getElementById(`ans-${i}`).value.trim());
+  if (answers.some(a => !a)) return alert('Remplissez les 4 réponses.');
+  const correctIndex = +document.querySelector('input[name=correct]:checked').value;
+  const time = +document.getElementById('q-time').value || 25;
+
+  state.questions.push({ text, answers, correctIndex, time });
+  document.getElementById('q-text').value = '';
+  [0,1,2,3].forEach(i => document.getElementById(`ans-${i}`).value = '');
+  renderQuestionList();
+}
+
+function renderQuestionList() {
+  const n = state.questions.length;
+  document.getElementById('q-count').textContent = n;
+  const section = document.getElementById('question-list-section');
+  section.classList.toggle('hidden', n === 0);
+
+  const list = document.getElementById('question-list');
+  list.innerHTML = state.questions.map((q, i) => `
+    <div class="q-item">
+      <div class="q-num">${i+1}</div>
+      <div class="q-text">${q.text}</div>
+      <button class="q-del" onclick="deleteQ(${i})">✕</button>
+    </div>`).join('');
+}
+
+function deleteQ(i) {
+  state.questions.splice(i, 1);
+  renderQuestionList();
+}
+
+// ═══════════════════════════════════════════
+//  IMPORT / EXPORT JSON
+// ═══════════════════════════════════════════
+function loadJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      const qs = data.questions || data;
+      if (!Array.isArray(qs)) throw new Error();
+      state.questions = qs.map(q => ({
+        text: q.text || q.question || '',
+        answers: q.answers || q.options || [],
+        correctIndex: q.correctIndex ?? q.correct ?? 0,
+        time: q.time || q.timer || 25,
+      }));
+      document.getElementById('file-info').textContent =
+        `✅ ${state.questions.length} questions chargées depuis "${data.name || file.name}"`;
+      renderQuestionList();
+    } catch {
+      alert('Fichier JSON invalide.');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function saveJSON() {
+  const data = { name: 'Quiz MES', created: new Date().toISOString(), questions: state.questions };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'quiz-mes.json';
+  a.click();
+}
+
+// ═══════════════════════════════════════════
+//  LOBBY HÔTE
+// ═══════════════════════════════════════════
+function startLobby() {
+  if (state.questions.length === 0) return alert('Ajoutez au moins une question.');
+  state.pin = String(Math.floor(1000 + Math.random() * 9000));
+  state.players = {};
+  state.currentQ = 0;
+  state.phase = 'lobby';
+  state.mode = 'host';
+
+  document.getElementById('pin-display').textContent = state.pin;
+
+  const joinUrl = `${location.origin}${location.pathname}?pin=${state.pin}`;
+  document.getElementById('join-url-text').textContent = joinUrl;
+
+  const qrDiv = document.getElementById('qrcode');
+  qrDiv.innerHTML = '';
+  new QRCode(qrDiv, { text: joinUrl, width: 140, height: 140, colorDark: '#2C5F2E' });
+
+  // Stockage partagé via localStorage (même domaine)
+  saveGameState();
+
+  showPage('page-lobby');
+  pollPlayers();
+}
+
+function saveGameState() {
+  localStorage.setItem('mes-quiz-state', JSON.stringify({
+    pin: state.pin,
+    phase: state.phase,
+    currentQ: state.currentQ,
+    questions: state.questions,
+    players: state.players,
+    timestamp: Date.now(),
+  }));
+}
+
+function loadGameState() {
+  try { return JSON.parse(localStorage.getItem('mes-quiz-state')); } catch { return null; }
+}
+
+let pollInterval = null;
+
+function pollPlayers() {
+  if (pollInterval) clearInterval(pollInterval);
+  pollInterval = setInterval(() => {
+    const gs = loadGameState();
+    if (!gs || gs.pin !== state.pin) return;
+    state.players = gs.players || {};
+    renderLobbyPlayers();
+
+    // Sync phase
+    if (state.mode === 'player') {
+      if (gs.phase === 'question' && state.phase !== 'question') {
+        state.phase = 'question';
+        state.currentQ = gs.currentQ;
+        startPlayerQuestion(gs);
+      }
+      if (gs.phase === 'result' && state.phase === 'question') {
+        state.phase = 'result';
+        showPlayerResult(gs);
+      }
+      if (gs.phase === 'final' && state.phase !== 'final') {
+        state.phase = 'final';
+        showPlayerFinal(gs);
+      }
+    }
+  }, 1000);
+}
+
+function renderLobbyPlayers() {
+  const players = Object.values(state.players);
+  document.getElementById('player-count-num').textContent = players.length;
+  document.getElementById('player-chips').innerHTML =
+    players.map(p => `<div class="chip">${p.name}</div>`).join('');
+}
+
+function cancelLobby() {
+  if (pollInterval) clearInterval(pollInterval);
+  localStorage.removeItem('mes-quiz-state');
+  showPage('page-host-setup');
+}
+
+function copyJoinLink() {
+  const url = `${location.origin}${location.pathname}?pin=${state.pin}`;
+  navigator.clipboard.writeText(url).then(() => alert('Lien copié !'));
+}
+
+// ═══════════════════════════════════════════
+//  REJOINDRE (JOUEUR)
+// ═══════════════════════════════════════════
+function joinGame() {
+  const pin = document.getElementById('join-pin').value.trim();
+  const name = document.getElementById('join-name').value.trim();
+  if (!pin || !name) return alert('Remplis le code PIN et ton prénom.');
+
+  const gs = loadGameState();
+  if (!gs || gs.pin !== pin) return alert('Code PIN introuvable. L\'hôte doit démarrer le lobby d\'abord.');
+  if (gs.phase !== 'lobby') return alert('La partie a déjà commencé.');
+
+  state.mode = 'player';
+  state.pin = pin;
+  state.myId = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+  state.myName = name;
+  state.myScore = 0;
+  state.phase = 'lobby';
+  state.questions = gs.questions;
+
+  // Enregistrement dans le state partagé
+  const updated = loadGameState();
+  updated.players[state.myId] = { name, score: 0, answered: false };
+  localStorage.setItem('mes-quiz-state', JSON.stringify(updated));
+
+  document.getElementById('player-name-display').textContent = `👋 Bonjour ${name} !`;
+  showPage('page-player-wait');
+  pollPlayers();
+}
+
+// ═══════════════════════════════════════════
+//  DÉMARRER LE QUIZ (HÔTE)
+// ═══════════════════════════════════════════
+function startQuiz() {
+  if (pollInterval) clearInterval(pollInterval);
+  state.currentQ = 0;
+  hostShowQuestion();
+}
+
+function hostShowQuestion() {
+  const q = state.questions[state.currentQ];
+  state.phase = 'question';
+  state.timeLeft = q.time;
+  state.totalTime = q.time;
+  state.correctIndex = q.correctIndex;
+
+  // Réinitialiser les réponses joueurs
+  const gs = loadGameState();
+  Object.keys(gs.players).forEach(id => { gs.players[id].answered = false; gs.players[id].lastAnswer = null; });
+  gs.phase = 'question';
+  gs.currentQ = state.currentQ;
+  gs.questionStart = Date.now();
+  localStorage.setItem('mes-quiz-state', JSON.stringify(gs));
+  state.players = gs.players;
+
+  // UI
+  document.getElementById('q-progress').textContent = `Question ${state.currentQ+1}/${state.questions.length}`;
+  document.getElementById('host-question-text').textContent = q.text;
+
+  const grid = document.getElementById('host-answers-grid');
+  grid.innerHTML = q.answers.map((a, i) => `
+    <div class="answer-btn a${i}" style="cursor:default">
+      <span class="answer-icon">${ICONS[i]}</span>${a}
+    </div>`).join('');
+
+  showPage('page-question-host');
+  startTimer('host');
+  pollAnswers();
+}
+
+let answerPollInterval = null;
+
+function pollAnswers() {
+  if (answerPollInterval) clearInterval(answerPollInterval);
+  answerPollInterval = setInterval(() => {
+    const gs = loadGameState();
+    if (!gs) return;
+    state.players = gs.players;
+    const total = Object.keys(state.players).length;
+    const answered = Object.values(state.players).filter(p => p.answered).length;
+    document.getElementById('responses-count').textContent = `${answered}/${total} réponses`;
+  }, 500);
+}
+
+function startTimer(who) {
+  if (state.timerInterval) clearInterval(state.timerInterval);
+  const timerEl = document.getElementById(who === 'host' ? 'timer-display' : 'player-timer');
+  const barEl   = document.getElementById(who === 'host' ? 'progress-bar' : 'player-progress-bar');
+
+  state.timerInterval = setInterval(() => {
+    state.timeLeft--;
+    if (timerEl) {
+      timerEl.textContent = state.timeLeft;
+      const pct = (state.timeLeft / state.totalTime) * 100;
+      timerEl.style.background = `conic-gradient(var(--vert-clair) ${pct}%, #D0DDD0 0)`;
+    }
+    if (barEl) barEl.style.width = ((state.totalTime - state.timeLeft) / state.totalTime * 100) + '%';
+
+    if (state.timeLeft <= 0) {
+      clearInterval(state.timerInterval);
+      if (who === 'host') hostShowResult();
+    }
+  }, 1000);
+}
+
+function hostShowResult() {
+  if (answerPollInterval) clearInterval(answerPollInterval);
+  const q = state.questions[state.currentQ];
+  const gs = loadGameState();
+  gs.phase = 'result';
+  gs.players = state.players;
+  localStorage.setItem('mes-quiz-state', JSON.stringify(gs));
+
+  document.getElementById('correct-answer-text').textContent = q.answers[q.correctIndex];
+
+  const sorted = Object.values(state.players).sort((a,b) => b.score - a.score);
+  document.getElementById('leaderboard-list').innerHTML = sorted.slice(0,10).map((p,i) => `
+    <li class="lb-item">
+      <div class="lb-rank">${i+1}</div>
+      <div class="lb-name">${p.name}</div>
+      <div class="lb-score">${p.score} pts</div>
+    </li>`).join('');
+
+  const isLast = state.currentQ >= state.questions.length - 1;
+  document.getElementById('next-btn').textContent = isLast ? '🏁 Voir les résultats finaux' : '➡️ Question suivante';
+
+  showPage('page-result-host');
+}
+
+function nextQuestion() {
+  state.currentQ++;
+  if (state.currentQ >= state.questions.length) {
+    hostShowFinal();
+  } else {
+    hostShowQuestion();
+  }
+}
+
+function hostShowFinal() {
+  const gs = loadGameState();
+  gs.phase = 'final';
+  localStorage.setItem('mes-quiz-state', JSON.stringify(gs));
+
+  const sorted = Object.values(state.players).sort((a,b) => b.score - a.score);
+  renderPodium(sorted);
+  document.getElementById('final-leaderboard').innerHTML = sorted.map((p,i) => `
+    <li class="lb-item">
+      <div class="lb-rank">${i+1}</div>
+      <div class="lb-name">${p.name}</div>
+      <div class="lb-score">${p.score} pts</div>
+    </li>`).join('');
+
+  showPage('page-final-host');
+}
+
+function renderPodium(sorted) {
+  const podium = document.getElementById('podium');
+  const order = [1, 0, 2]; // affichage : 2e, 1er, 3e
+  podium.innerHTML = order.map(i => {
+    const p = sorted[i];
+    if (!p) return '';
+    const cls = ['p1','p2','p3'][i === 0 ? 0 : i === 1 ? 1 : 2];
+    const rank = ['🥇','🥈','🥉'][i];
+    return `<div class="podium-item">
+      <div class="podium-bar ${cls}"><span style="font-size:1.5rem">${rank}</span></div>
+      <div class="podium-name">${p.name}</div>
+      <div class="podium-score">${p.score} pts</div>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════
+//  JOUEUR : QUESTION
+// ═══════════════════════════════════════════
+function startPlayerQuestion(gs) {
+  const q = gs.questions[gs.currentQ];
+  state.questions = gs.questions;
+  state.currentQ = gs.currentQ;
+  state.selectedAnswer = null;
+  state.correctIndex = q.correctIndex;
+
+  const elapsed = Math.floor((Date.now() - gs.questionStart) / 1000);
+  state.totalTime = q.time;
+  state.timeLeft = Math.max(0, q.time - elapsed);
+
+  document.getElementById('player-q-progress').textContent = `Question ${gs.currentQ+1}/${gs.questions.length}`;
+  document.getElementById('player-question-text').textContent = q.text;
+  document.getElementById('player-score-top').textContent = state.myScore;
+  document.getElementById('player-answered-msg').classList.add('hidden');
+
+  const grid = document.getElementById('player-answers-grid');
+  grid.innerHTML = q.answers.map((a, i) => `
+    <button class="answer-btn a${i}" onclick="playerAnswer(${i})">
+      <span class="answer-icon">${ICONS[i]}</span>${a}
+    </button>`).join('');
+
+  showPage('page-question-player');
+  startTimer('player');
+}
+
+function playerAnswer(idx) {
+  if (state.selectedAnswer !== null) return;
+  state.selectedAnswer = idx;
+
+  clearInterval(state.timerInterval);
+
+  const timeBonus = Math.round((state.timeLeft / state.totalTime) * 500);
+  const isCorrect = idx === state.correctIndex;
+  const points = isCorrect ? 500 + timeBonus : 0;
+  state.myScore += points;
+
+  // Marquer dans le state partagé
+  const gs = loadGameState();
+  if (gs && gs.players[state.myId]) {
+    gs.players[state.myId].answered = true;
+    gs.players[state.myId].lastAnswer = idx;
+    gs.players[state.myId].score = state.myScore;
+    localStorage.setItem('mes-quiz-state', JSON.stringify(gs));
+  }
+
+  // Feedback visuel
+  const btns = document.querySelectorAll('#player-answers-grid .answer-btn');
+  btns.forEach((btn, i) => {
+    btn.classList.add(i === idx ? '' : 'disabled');
+    if (i === idx && !isCorrect) btn.classList.add('wrong');
+  });
+  document.getElementById('player-answered-msg').classList.remove('hidden');
+  document.getElementById('player-score-top').textContent = state.myScore;
+}
+
+function showPlayerResult(gs) {
+  const q = gs.questions[gs.currentQ];
+  const isCorrect = state.selectedAnswer === q.correctIndex;
+
+  const card = document.getElementById('player-result-card');
+  document.getElementById('player-result-icon').textContent = isCorrect ? '✅' : '❌';
+  document.getElementById('player-result-title').textContent = isCorrect ? 'Bonne réponse !' : 'Raté…';
+  card.style.background = isCorrect ? 'var(--vert)' : 'var(--rouge)';
+  document.getElementById('player-result-correct').textContent = `Bonne réponse : ${q.answers[q.correctIndex]}`;
+  document.getElementById('player-score-result').textContent = state.myScore;
+
+  showPage('page-result-player');
+}
+
+function showPlayerFinal(gs) {
+  const sorted = Object.values(gs.players).sort((a,b) => b.score - a.score);
+  const rank = sorted.findIndex(p => p.name === state.myName) + 1;
+
+  document.getElementById('player-final-score').textContent = state.myScore;
+  document.getElementById('player-final-rank').textContent =
+    rank === 1 ? '🥇 Tu es 1er·ère !' :
+    rank === 2 ? '🥈 Tu es 2ème !' :
+    rank === 3 ? '🥉 Tu es 3ème !' :
+    `Tu es ${rank}ème`;
+
+  showPage('page-final-player');
+}
+
+// ═══════════════════════════════════════════
+//  NOUVELLE PARTIE
+// ═══════════════════════════════════════════
+function newGame() {
+  if (pollInterval) clearInterval(pollInterval);
+  if (answerPollInterval) clearInterval(answerPollInterval);
+  if (state.timerInterval) clearInterval(state.timerInterval);
+  state.mode = null;
+  state.phase = 'lobby';
+  state.players = {};
+  state.myScore = 0;
+  state.currentQ = 0;
+  showPage('page-home');
+}
+
+// ═══════════════════════════════════════════
+//  AUTO-JOIN VIA URL ?pin=XXXX
+// ═══════════════════════════════════════════
+(function() {
+  const params = new URLSearchParams(location.search);
+  const pin = params.get('pin');
+  if (pin) {
+    document.getElementById('join-pin').value = pin;
+    showPage('page-join');
+  }
+})();
+</script>
+</body>
+</html>
