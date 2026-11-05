@@ -542,18 +542,21 @@ const state = {
   mode: null,          // 'host' | 'player'
   questions: [],
   currentQ: 0,
-  players: {},         // { id: { name, score, answered } }
-  myId: null,
+  players: {},         // hôte : { prénom: { name, score, answered, pid, online, token } }
   myName: '',
   myScore: 0,
   pin: '',
   timerInterval: null,
-  timeLeft: 0,
   totalTime: 0,
+  qStart: 0,
   phase: 'lobby',      // lobby | question | result | final
   selectedAnswer: null,
-  correctIndex: null,
 };
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+const wsSend = (ws, o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
+const store = { get(k){ try { return localStorage.getItem(k); } catch { return null; } }, set(k,v){ try { localStorage.setItem(k,v); } catch {} } };
 
 // ═══════════════════════════════════════════
 //  NAVIGATION
@@ -604,14 +607,11 @@ function addQuestion() {
 function renderQuestionList() {
   const n = state.questions.length;
   document.getElementById('q-count').textContent = n;
-  const section = document.getElementById('question-list-section');
-  section.classList.toggle('hidden', n === 0);
-
-  const list = document.getElementById('question-list');
-  list.innerHTML = state.questions.map((q, i) => `
+  document.getElementById('question-list-section').classList.toggle('hidden', n === 0);
+  document.getElementById('question-list').innerHTML = state.questions.map((q, i) => `
     <div class="q-item">
       <div class="q-num">${i+1}</div>
-      <div class="q-text">${q.text}</div>
+      <div class="q-text">${esc(q.text)}</div>
       <button class="q-del" onclick="deleteQ(${i})">✕</button>
     </div>`).join('');
 }
@@ -624,6 +624,26 @@ function deleteQ(i) {
 // ═══════════════════════════════════════════
 //  IMPORT / EXPORT JSON
 // ═══════════════════════════════════════════
+function normalizeQuestions(data) {
+  const qs = Array.isArray(data) ? data : (data.questions || data.quiz);
+  if (!Array.isArray(qs) || !qs.length) throw new Error('aucune question');
+  return qs.map((q, n) => {
+    const text = q.text || q.question || q.titre || '';
+    let answers = q.answers || q.options || q.choices || q.reponses || [];
+    if (answers.length && typeof answers[0] === 'object') answers = answers.map(a => a.text ?? a.label ?? '');
+    answers = answers.map(String).slice(0, 4);
+    let c = q.correctIndex ?? q.correct ?? q.answer ?? q.bonne_reponse ?? 0;
+    if (Array.isArray(c)) c = c[0];
+    if (typeof c === 'string') {
+      const k = answers.findIndex(a => a.trim().toLowerCase() === c.trim().toLowerCase());
+      c = k >= 0 ? k : (/^[A-D]$/i.test(c) ? c.toUpperCase().charCodeAt(0) - 65 : +c);
+    }
+    if (!text || answers.length < 2 || !(c >= 0 && c < answers.length))
+      throw new Error(`question ${n+1} incomplète`);
+    return { text, answers, correctIndex: c, time: +(q.time || q.timer || q.temps) || 25 };
+  });
+}
+
 function loadJSON(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -631,22 +651,16 @@ function loadJSON(event) {
   reader.onload = e => {
     try {
       const data = JSON.parse(e.target.result);
-      const qs = data.questions || data;
-      if (!Array.isArray(qs)) throw new Error();
-      state.questions = qs.map(q => ({
-        text: q.text || q.question || '',
-        answers: q.answers || q.options || [],
-        correctIndex: q.correctIndex ?? q.correct ?? 0,
-        time: q.time || q.timer || 25,
-      }));
+      state.questions = normalizeQuestions(data);
       document.getElementById('file-info').textContent =
         `✅ ${state.questions.length} questions chargées depuis "${data.name || file.name}"`;
       renderQuestionList();
-    } catch {
-      alert('Fichier JSON invalide.');
+    } catch (err) {
+      alert('Fichier JSON invalide : ' + err.message);
     }
   };
   reader.readAsText(file);
+  event.target.value = '';
 }
 
 function saveJSON() {
@@ -659,349 +673,360 @@ function saveJSON() {
 }
 
 // ═══════════════════════════════════════════
-//  LOBBY HÔTE
+//  CHRONO (calé sur l'heure de fin)
 // ═══════════════════════════════════════════
+function startTimer(who, endAt, total, onEnd) {
+  if (state.timerInterval) clearInterval(state.timerInterval);
+  const timerEl = document.getElementById(who === 'host' ? 'timer-display' : 'player-timer');
+  const barEl   = document.getElementById(who === 'host' ? 'progress-bar' : 'player-progress-bar');
+  const tick = () => {
+    const left = Math.max(0, (endAt - Date.now()) / 1000);
+    timerEl.textContent = Math.ceil(left);
+    timerEl.style.background = `conic-gradient(var(--vert-clair) ${left / total * 100}%, #D0DDD0 0)`;
+    barEl.style.width = ((total - left) / total * 100) + '%';
+    if (left <= 0) { clearInterval(state.timerInterval); if (onEnd) onEnd(); }
+  };
+  tick();
+  state.timerInterval = setInterval(tick, 250);
+}
+
+// ═══════════════════════════════════════════
+//  HÔTE : connexion au serveur
+// ═══════════════════════════════════════════
+let hostWs = null;
+
 function startLobby() {
   if (state.questions.length === 0) return alert('Ajoutez au moins une question.');
-  state.pin = String(Math.floor(1000 + Math.random() * 9000));
+  state.mode = 'host';
   state.players = {};
   state.currentQ = 0;
   state.phase = 'lobby';
-  state.mode = 'host';
-
-  document.getElementById('pin-display').textContent = state.pin;
-
-  const joinUrl = `${location.origin}${location.pathname}?pin=${state.pin}`;
-  document.getElementById('join-url-text').textContent = joinUrl;
-
-  const qrDiv = document.getElementById('qrcode');
-  qrDiv.innerHTML = '';
-  new QRCode(qrDiv, { text: joinUrl, width: 140, height: 140, colorDark: '#2C5F2E' });
-
-  // Stockage partagé via localStorage (même domaine)
-  saveGameState();
-
+  state.pin = '';
+  document.getElementById('pin-display').textContent = '····';
+  document.getElementById('qrcode').innerHTML = '';
+  document.getElementById('join-url-text').textContent = 'Connexion au serveur…';
+  renderLobbyPlayers();
   showPage('page-lobby');
-  pollPlayers();
+  connectHost();
 }
 
-function saveGameState() {
-  localStorage.setItem('mes-quiz-state', JSON.stringify({
-    pin: state.pin,
-    phase: state.phase,
-    currentQ: state.currentQ,
-    questions: state.questions,
-    players: state.players,
-    timestamp: Date.now(),
-  }));
-}
-
-function loadGameState() {
-  try { return JSON.parse(localStorage.getItem('mes-quiz-state')); } catch { return null; }
-}
-
-let pollInterval = null;
-
-function pollPlayers() {
-  if (pollInterval) clearInterval(pollInterval);
-  pollInterval = setInterval(() => {
-    const gs = loadGameState();
-    if (!gs || gs.pin !== state.pin) return;
-    state.players = gs.players || {};
-    renderLobbyPlayers();
-
-    // Sync phase
-    if (state.mode === 'player') {
-      if (gs.phase === 'question' && state.phase !== 'question') {
-        state.phase = 'question';
-        state.currentQ = gs.currentQ;
-        startPlayerQuestion(gs);
+function connectHost() {
+  if (hostWs && hostWs.readyState < 2) return;
+  const ws = hostWs = new WebSocket(WS_URL);
+  ws.onopen = () => wsSend(ws, { t: 'host', code: state.pin || undefined });
+  ws.onmessage = ev => {
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.t === 'hosted') {
+      if (m.code !== state.pin) {
+        state.pin = m.code;
+        document.getElementById('pin-display').textContent = state.pin;
+        const joinUrl = `${location.origin}${location.pathname}?pin=${state.pin}`;
+        document.getElementById('join-url-text').textContent = joinUrl;
+        const qrDiv = document.getElementById('qrcode');
+        qrDiv.innerHTML = '';
+        try { new QRCode(qrDiv, { text: joinUrl, width: 180, height: 180, colorDark: '#2C5F2E' }); } catch {}
       }
-      if (gs.phase === 'result' && state.phase === 'question') {
-        state.phase = 'result';
-        showPlayerResult(gs);
-      }
-      if (gs.phase === 'final' && state.phase !== 'final') {
-        state.phase = 'final';
-        showPlayerFinal(gs);
-      }
+      // participants partis pendant une coupure
+      const live = m.pids || [];
+      Object.values(state.players).forEach(p => { if (p.online && !live.includes(p.pid)) p.online = false; });
+      renderLobbyPlayers(); updateCount();
     }
-  }, 1000);
+    else if (m.t === 'msg') hostOnMessage(m.pid, m.data || {});
+    else if (m.t === 'close') {
+      const p = Object.values(state.players).find(x => x.pid === m.pid);
+      if (p) { p.online = false; renderLobbyPlayers(); updateCount(); }
+    }
+  };
+  ws.onclose = () => {
+    if (ws !== hostWs || state.mode !== 'host') return;
+    document.getElementById('join-url-text').textContent = 'Reconnexion au serveur…';
+    setTimeout(connectHost, 2000);
+  };
+}
+
+const toPlayer = (p, data) => { if (p.pid) wsSend(hostWs, { t: 'to', pid: p.pid, data }); };
+const broadcast = fn => Object.values(state.players).forEach(p => { if (p.online) toPlayer(p, typeof fn === 'function' ? fn(p) : fn); });
+const onlinePlayers = () => Object.values(state.players).filter(p => p.online);
+const ranked = () => Object.values(state.players).sort((a, b) => b.score - a.score);
+const rankOf = p => ranked().indexOf(p) + 1;
+
+function hostOnMessage(pid, d) {
+  if (d.type === 'join') {
+    const name = String(d.name || '').trim().slice(0, 20);
+    if (!name) return;
+    let p = state.players[name];
+    if (p && p.online && p.token !== d.token) {
+      wsSend(hostWs, { t: 'to', pid, data: { type: 'error', msg: 'Ce prénom est déjà pris, choisis-en un autre.' } });
+      wsSend(hostWs, { t: 'kick', pid });
+      return;
+    }
+    if (!p) p = state.players[name] = { name, score: 0, answered: false, lastPoints: 0, token: d.token };
+    p.pid = pid; p.online = true; p.token = d.token;
+    toPlayer(p, { type: 'welcome', name, score: p.score });
+    syncPlayer(p);
+    renderLobbyPlayers(); updateCount();
+  }
+  else if (d.type === 'answer') {
+    const p = Object.values(state.players).find(x => x.pid === pid);
+    const q = state.questions[state.currentQ];
+    if (!p || state.phase !== 'question' || d.q !== state.currentQ || p.answered) return;
+    const idx = +d.idx;
+    if (!(idx >= 0 && idx < q.answers.length)) return;
+    const left = Math.max(0, state.totalTime - (Date.now() - state.qStart) / 1000);
+    p.answered = true;
+    p.lastAnswer = idx;
+    p.lastPoints = idx === q.correctIndex ? 500 + Math.round(left / state.totalTime * 500) : 0;
+    p.score += p.lastPoints;
+    toPlayer(p, { type: 'received' });
+    updateCount();
+    if (onlinePlayers().every(x => x.answered)) hostShowResult();
+  }
+}
+
+// remet à jour un participant qui arrive ou revient après une coupure
+function syncPlayer(p) {
+  if (state.phase === 'question') toPlayer(p, p.answered ? { type: 'received' } : questionPayload());
+  else if (state.phase === 'result') toPlayer(p, resultPayload(p));
+  else if (state.phase === 'final') toPlayer(p, finalPayload(p));
+  else toPlayer(p, { type: 'wait' });
 }
 
 function renderLobbyPlayers() {
   const players = Object.values(state.players);
-  document.getElementById('player-count-num').textContent = players.length;
+  document.getElementById('player-count-num').textContent = players.filter(p => p.online).length;
   document.getElementById('player-chips').innerHTML =
-    players.map(p => `<div class="chip">${p.name}</div>`).join('');
+    players.map(p => `<div class="chip" style="${p.online ? '' : 'opacity:.4'}">${esc(p.name)}</div>`).join('');
+}
+
+function updateCount() {
+  const on = onlinePlayers();
+  document.getElementById('responses-count').textContent =
+    `${on.filter(p => p.answered).length}/${on.length} réponses`;
 }
 
 function cancelLobby() {
-  if (pollInterval) clearInterval(pollInterval);
-  localStorage.removeItem('mes-quiz-state');
+  state.mode = null;
+  if (hostWs) hostWs.close();
   showPage('page-host-setup');
 }
 
 function copyJoinLink() {
   const url = `${location.origin}${location.pathname}?pin=${state.pin}`;
-  navigator.clipboard.writeText(url).then(() => alert('Lien copié !'));
+  navigator.clipboard.writeText(url).then(() => alert('Lien copié !')).catch(() => prompt('Copie ce lien :', url));
 }
 
 // ═══════════════════════════════════════════
-//  REJOINDRE (JOUEUR)
-// ═══════════════════════════════════════════
-function joinGame() {
-  const pin = document.getElementById('join-pin').value.trim();
-  const name = document.getElementById('join-name').value.trim();
-  if (!pin || !name) return alert('Remplis le code PIN et ton prénom.');
-
-  const gs = loadGameState();
-  if (!gs || gs.pin !== pin) return alert('Code PIN introuvable. L\'hôte doit démarrer le lobby d\'abord.');
-  if (gs.phase !== 'lobby') return alert('La partie a déjà commencé.');
-
-  state.mode = 'player';
-  state.pin = pin;
-  state.myId = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-  state.myName = name;
-  state.myScore = 0;
-  state.phase = 'lobby';
-  state.questions = gs.questions;
-
-  // Enregistrement dans le state partagé
-  const updated = loadGameState();
-  updated.players[state.myId] = { name, score: 0, answered: false };
-  localStorage.setItem('mes-quiz-state', JSON.stringify(updated));
-
-  document.getElementById('player-name-display').textContent = `👋 Bonjour ${name} !`;
-  showPage('page-player-wait');
-  pollPlayers();
-}
-
-// ═══════════════════════════════════════════
-//  DÉMARRER LE QUIZ (HÔTE)
+//  DÉROULÉ DU QUIZ (HÔTE)
 // ═══════════════════════════════════════════
 function startQuiz() {
-  if (pollInterval) clearInterval(pollInterval);
+  Object.values(state.players).forEach(p => { p.score = 0; p.answered = false; p.lastPoints = 0; });
   state.currentQ = 0;
   hostShowQuestion();
+}
+
+function questionPayload() {
+  const q = state.questions[state.currentQ];
+  return {
+    type: 'question', q: state.currentQ, total: state.questions.length,
+    text: q.text, answers: q.answers, time: q.time,
+    remain: Math.max(0, state.totalTime - (Date.now() - state.qStart) / 1000),
+  };
 }
 
 function hostShowQuestion() {
   const q = state.questions[state.currentQ];
   state.phase = 'question';
-  state.timeLeft = q.time;
   state.totalTime = q.time;
-  state.correctIndex = q.correctIndex;
+  state.qStart = Date.now();
+  Object.values(state.players).forEach(p => { p.answered = false; p.lastAnswer = null; p.lastPoints = 0; });
 
-  // Réinitialiser les réponses joueurs
-  const gs = loadGameState();
-  Object.keys(gs.players).forEach(id => { gs.players[id].answered = false; gs.players[id].lastAnswer = null; });
-  gs.phase = 'question';
-  gs.currentQ = state.currentQ;
-  gs.questionStart = Date.now();
-  localStorage.setItem('mes-quiz-state', JSON.stringify(gs));
-  state.players = gs.players;
-
-  // UI
   document.getElementById('q-progress').textContent = `Question ${state.currentQ+1}/${state.questions.length}`;
   document.getElementById('host-question-text').textContent = q.text;
-
-  const grid = document.getElementById('host-answers-grid');
-  grid.innerHTML = q.answers.map((a, i) => `
+  document.getElementById('host-answers-grid').innerHTML = q.answers.map((a, i) => `
     <div class="answer-btn a${i}" style="cursor:default">
-      <span class="answer-icon">${ICONS[i]}</span>${a}
+      <span class="answer-icon">${ICONS[i]}</span>${esc(a)}
     </div>`).join('');
 
+  updateCount();
   showPage('page-question-host');
-  startTimer('host');
-  pollAnswers();
+  broadcast(questionPayload());
+  startTimer('host', state.qStart + q.time * 1000, q.time, hostShowResult);
 }
 
-let answerPollInterval = null;
-
-function pollAnswers() {
-  if (answerPollInterval) clearInterval(answerPollInterval);
-  answerPollInterval = setInterval(() => {
-    const gs = loadGameState();
-    if (!gs) return;
-    state.players = gs.players;
-    const total = Object.keys(state.players).length;
-    const answered = Object.values(state.players).filter(p => p.answered).length;
-    document.getElementById('responses-count').textContent = `${answered}/${total} réponses`;
-  }, 500);
-}
-
-function startTimer(who) {
-  if (state.timerInterval) clearInterval(state.timerInterval);
-  const timerEl = document.getElementById(who === 'host' ? 'timer-display' : 'player-timer');
-  const barEl   = document.getElementById(who === 'host' ? 'progress-bar' : 'player-progress-bar');
-
-  state.timerInterval = setInterval(() => {
-    state.timeLeft--;
-    if (timerEl) {
-      timerEl.textContent = state.timeLeft;
-      const pct = (state.timeLeft / state.totalTime) * 100;
-      timerEl.style.background = `conic-gradient(var(--vert-clair) ${pct}%, #D0DDD0 0)`;
-    }
-    if (barEl) barEl.style.width = ((state.totalTime - state.timeLeft) / state.totalTime * 100) + '%';
-
-    if (state.timeLeft <= 0) {
-      clearInterval(state.timerInterval);
-      if (who === 'host') hostShowResult();
-    }
-  }, 1000);
+function resultPayload(p) {
+  const q = state.questions[state.currentQ];
+  return { type: 'result', answered: p.answered, correct: p.answered && p.lastAnswer === q.correctIndex,
+    points: p.lastPoints, score: p.score, correctText: q.answers[q.correctIndex] };
 }
 
 function hostShowResult() {
-  if (answerPollInterval) clearInterval(answerPollInterval);
+  if (state.phase !== 'question') return;
+  clearInterval(state.timerInterval);
+  state.phase = 'result';
   const q = state.questions[state.currentQ];
-  const gs = loadGameState();
-  gs.phase = 'result';
-  gs.players = state.players;
-  localStorage.setItem('mes-quiz-state', JSON.stringify(gs));
 
   document.getElementById('correct-answer-text').textContent = q.answers[q.correctIndex];
-
-  const sorted = Object.values(state.players).sort((a,b) => b.score - a.score);
-  document.getElementById('leaderboard-list').innerHTML = sorted.slice(0,10).map((p,i) => `
+  document.getElementById('leaderboard-list').innerHTML = ranked().slice(0, 10).map((p, i) => `
     <li class="lb-item">
       <div class="lb-rank">${i+1}</div>
-      <div class="lb-name">${p.name}</div>
+      <div class="lb-name">${esc(p.name)}</div>
       <div class="lb-score">${p.score} pts</div>
     </li>`).join('');
 
   const isLast = state.currentQ >= state.questions.length - 1;
   document.getElementById('next-btn').textContent = isLast ? '🏁 Voir les résultats finaux' : '➡️ Question suivante';
 
+  broadcast(resultPayload);
   showPage('page-result-host');
 }
 
 function nextQuestion() {
   state.currentQ++;
-  if (state.currentQ >= state.questions.length) {
-    hostShowFinal();
-  } else {
-    hostShowQuestion();
-  }
+  if (state.currentQ >= state.questions.length) hostShowFinal();
+  else hostShowQuestion();
+}
+
+function finalPayload(p) {
+  return { type: 'final', score: p.score, rank: rankOf(p), of: Object.keys(state.players).length };
 }
 
 function hostShowFinal() {
-  const gs = loadGameState();
-  gs.phase = 'final';
-  localStorage.setItem('mes-quiz-state', JSON.stringify(gs));
-
-  const sorted = Object.values(state.players).sort((a,b) => b.score - a.score);
+  state.phase = 'final';
+  const sorted = ranked();
   renderPodium(sorted);
-  document.getElementById('final-leaderboard').innerHTML = sorted.map((p,i) => `
+  document.getElementById('final-leaderboard').innerHTML = sorted.map((p, i) => `
     <li class="lb-item">
       <div class="lb-rank">${i+1}</div>
-      <div class="lb-name">${p.name}</div>
+      <div class="lb-name">${esc(p.name)}</div>
       <div class="lb-score">${p.score} pts</div>
     </li>`).join('');
-
+  broadcast(finalPayload);
   showPage('page-final-host');
 }
 
 function renderPodium(sorted) {
-  const podium = document.getElementById('podium');
   const order = [1, 0, 2]; // affichage : 2e, 1er, 3e
-  podium.innerHTML = order.map(i => {
+  const cls = ['p1', 'p2', 'p3'];
+  const medal = ['🥇', '🥈', '🥉'];
+  document.getElementById('podium').innerHTML = order.map(i => {
     const p = sorted[i];
     if (!p) return '';
-    const cls = ['p1','p2','p3'][i === 0 ? 0 : i === 1 ? 1 : 2];
-    const rank = ['🥇','🥈','🥉'][i];
     return `<div class="podium-item">
-      <div class="podium-bar ${cls}"><span style="font-size:1.5rem">${rank}</span></div>
-      <div class="podium-name">${p.name}</div>
+      <div class="podium-bar ${cls[i]}"><span style="font-size:1.5rem">${medal[i]}</span></div>
+      <div class="podium-name">${esc(p.name)}</div>
       <div class="podium-score">${p.score} pts</div>
     </div>`;
   }).join('');
 }
 
 // ═══════════════════════════════════════════
-//  JOUEUR : QUESTION
+//  JOUEUR
 // ═══════════════════════════════════════════
-function startPlayerQuestion(gs) {
-  const q = gs.questions[gs.currentQ];
-  state.questions = gs.questions;
-  state.currentQ = gs.currentQ;
+let playerWs = null, joined = false, retryTimer = null;
+let token = store.get('mes-quiz-token');
+if (!token) { token = Math.random().toString(36).slice(2) + Date.now().toString(36); store.set('mes-quiz-token', token); }
+
+function joinGame() {
+  const pin = document.getElementById('join-pin').value.trim();
+  const name = document.getElementById('join-name').value.trim().slice(0, 20);
+  if (!pin || !name) return alert('Remplis le code PIN et ton prénom.');
+  state.mode = 'player';
+  state.pin = pin;
+  state.myName = name;
+  store.set('mes-quiz-name', name);
+  joined = false;
+  if (playerWs) { const old = playerWs; playerWs = null; old.close(); }
+  connectPlayer();
+}
+
+function connectPlayer() {
+  if (playerWs && playerWs.readyState < 2) return;
+  const ws = playerWs = new WebSocket(WS_URL);
+  ws.onopen = () => wsSend(ws, { t: 'join', code: state.pin });
+  ws.onmessage = ev => {
+    let m; try { m = JSON.parse(ev.data); } catch { return; }
+    if (m.t === 'joined') wsSend(ws, { t: 'msg', data: { type: 'join', name: state.myName, token } });
+    else if (m.t === 'noroom') {
+      joined = false; ws.close();
+      if (!document.getElementById('page-join').classList.contains('active')) showPage('page-join');
+      alert("Code PIN introuvable. Vérifie le code affiché sur l'écran de l'hôte.");
+    }
+    else if (m.t === 'msg') playerOnMessage(m.data || {});
+  };
+  ws.onclose = () => {
+    if (ws !== playerWs) return;
+    if (joined && !retryTimer) retryTimer = setTimeout(() => { retryTimer = null; connectPlayer(); }, 2000);
+  };
+}
+// le téléphone sort de veille : reconnexion immédiate
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && state.mode === 'player' && joined && (!playerWs || playerWs.readyState > 1)) connectPlayer();
+});
+
+function playerOnMessage(d) {
+  if (d.type === 'error') { joined = false; showPage('page-join'); alert(d.msg); }
+  else if (d.type === 'welcome') {
+    joined = true;
+    state.myScore = d.score;
+    document.getElementById('player-name-display').textContent = `👋 Bonjour ${d.name} !`;
+  }
+  else if (d.type === 'wait') { clearInterval(state.timerInterval); showPage('page-player-wait'); }
+  else if (d.type === 'question') startPlayerQuestion(d);
+  else if (d.type === 'received') {
+    clearInterval(state.timerInterval);
+    document.getElementById('player-answered-msg').classList.remove('hidden');
+    if (!document.getElementById('page-question-player').classList.contains('active')) showPage('page-player-wait');
+  }
+  else if (d.type === 'result') showPlayerResult(d);
+  else if (d.type === 'final') showPlayerFinal(d);
+}
+
+function startPlayerQuestion(d) {
+  state.currentQ = d.q;
   state.selectedAnswer = null;
-  state.correctIndex = q.correctIndex;
-
-  const elapsed = Math.floor((Date.now() - gs.questionStart) / 1000);
-  state.totalTime = q.time;
-  state.timeLeft = Math.max(0, q.time - elapsed);
-
-  document.getElementById('player-q-progress').textContent = `Question ${gs.currentQ+1}/${gs.questions.length}`;
-  document.getElementById('player-question-text').textContent = q.text;
+  document.getElementById('player-q-progress').textContent = `Question ${d.q+1}/${d.total}`;
+  document.getElementById('player-question-text').textContent = d.text;
   document.getElementById('player-score-top').textContent = state.myScore;
   document.getElementById('player-answered-msg').classList.add('hidden');
-
-  const grid = document.getElementById('player-answers-grid');
-  grid.innerHTML = q.answers.map((a, i) => `
+  document.getElementById('player-answers-grid').innerHTML = d.answers.map((a, i) => `
     <button class="answer-btn a${i}" onclick="playerAnswer(${i})">
-      <span class="answer-icon">${ICONS[i]}</span>${a}
+      <span class="answer-icon">${ICONS[i]}</span>${esc(a)}
     </button>`).join('');
-
   showPage('page-question-player');
-  startTimer('player');
+  startTimer('player', Date.now() + d.remain * 1000, d.time);
 }
 
 function playerAnswer(idx) {
   if (state.selectedAnswer !== null) return;
   state.selectedAnswer = idx;
-
-  clearInterval(state.timerInterval);
-
-  const timeBonus = Math.round((state.timeLeft / state.totalTime) * 500);
-  const isCorrect = idx === state.correctIndex;
-  const points = isCorrect ? 500 + timeBonus : 0;
-  state.myScore += points;
-
-  // Marquer dans le state partagé
-  const gs = loadGameState();
-  if (gs && gs.players[state.myId]) {
-    gs.players[state.myId].answered = true;
-    gs.players[state.myId].lastAnswer = idx;
-    gs.players[state.myId].score = state.myScore;
-    localStorage.setItem('mes-quiz-state', JSON.stringify(gs));
-  }
-
-  // Feedback visuel
-  const btns = document.querySelectorAll('#player-answers-grid .answer-btn');
-  btns.forEach((btn, i) => {
-    btn.classList.add(i === idx ? '' : 'disabled');
-    if (i === idx && !isCorrect) btn.classList.add('wrong');
+  wsSend(playerWs, { t: 'msg', data: { type: 'answer', q: state.currentQ, idx } });
+  document.querySelectorAll('#player-answers-grid .answer-btn').forEach((btn, i) => {
+    if (i !== idx) btn.classList.add('disabled');
   });
-  document.getElementById('player-answered-msg').classList.remove('hidden');
-  document.getElementById('player-score-top').textContent = state.myScore;
 }
 
-function showPlayerResult(gs) {
-  const q = gs.questions[gs.currentQ];
-  const isCorrect = state.selectedAnswer === q.correctIndex;
-
+function showPlayerResult(d) {
+  clearInterval(state.timerInterval);
+  state.myScore = d.score;
   const card = document.getElementById('player-result-card');
-  document.getElementById('player-result-icon').textContent = isCorrect ? '✅' : '❌';
-  document.getElementById('player-result-title').textContent = isCorrect ? 'Bonne réponse !' : 'Raté…';
-  card.style.background = isCorrect ? 'var(--vert)' : 'var(--rouge)';
-  document.getElementById('player-result-correct').textContent = `Bonne réponse : ${q.answers[q.correctIndex]}`;
-  document.getElementById('player-score-result').textContent = state.myScore;
-
+  document.getElementById('player-result-icon').textContent = d.correct ? '✅' : (d.answered ? '❌' : '⏱️');
+  document.getElementById('player-result-title').textContent =
+    d.correct ? `Bonne réponse ! +${d.points} pts` : (d.answered ? 'Raté…' : 'Temps écoulé');
+  card.style.background = d.correct ? 'var(--vert)' : 'var(--rouge)';
+  document.getElementById('player-result-correct').textContent = `Bonne réponse : ${d.correctText}`;
+  document.getElementById('player-score-result').textContent = d.score;
   showPage('page-result-player');
 }
 
-function showPlayerFinal(gs) {
-  const sorted = Object.values(gs.players).sort((a,b) => b.score - a.score);
-  const rank = sorted.findIndex(p => p.name === state.myName) + 1;
-
-  document.getElementById('player-final-score').textContent = state.myScore;
+function showPlayerFinal(d) {
+  clearInterval(state.timerInterval);
+  state.myScore = d.score;
+  document.getElementById('player-final-score').textContent = d.score;
   document.getElementById('player-final-rank').textContent =
-    rank === 1 ? '🥇 Tu es 1er·ère !' :
-    rank === 2 ? '🥈 Tu es 2ème !' :
-    rank === 3 ? '🥉 Tu es 3ème !' :
-    `Tu es ${rank}ème`;
-
+    d.rank === 1 ? '🥇 Tu es 1er·ère !' :
+    d.rank === 2 ? '🥈 Tu es 2ème !' :
+    d.rank === 3 ? '🥉 Tu es 3ème !' :
+    `Tu es ${d.rank}ème sur ${d.of}`;
   showPage('page-final-player');
 }
 
@@ -1009,10 +1034,12 @@ function showPlayerFinal(gs) {
 //  NOUVELLE PARTIE
 // ═══════════════════════════════════════════
 function newGame() {
-  if (pollInterval) clearInterval(pollInterval);
-  if (answerPollInterval) clearInterval(answerPollInterval);
   if (state.timerInterval) clearInterval(state.timerInterval);
+  const wasHost = state.mode === 'host';
   state.mode = null;
+  joined = false;
+  if (wasHost && hostWs) { broadcast({ type: 'wait' }); hostWs.close(); }
+  if (playerWs) { const w = playerWs; playerWs = null; w.close(); }
   state.phase = 'lobby';
   state.players = {};
   state.myScore = 0;
@@ -1026,6 +1053,7 @@ function newGame() {
 (function() {
   const params = new URLSearchParams(location.search);
   const pin = params.get('pin');
+  document.getElementById('join-name').value = store.get('mes-quiz-name') || '';
   if (pin) {
     document.getElementById('join-pin').value = pin;
     showPage('page-join');

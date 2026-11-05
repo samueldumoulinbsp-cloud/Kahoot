@@ -1,10 +1,15 @@
 {
   "name": "quiz-mes",
   "version": "1.0.0",
+  "description": "Quiz MES en direct : l'hôte projette, les participants répondent sur smartphone",
+  "main": "server.js",
   "scripts": {
-    "start": "npx serve . -p $PORT"
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
-    "serve": "^14.0.0"
+    "ws": "^8.18.0"
   }
 }
